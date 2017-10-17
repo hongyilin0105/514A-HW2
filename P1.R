@@ -8,7 +8,8 @@ library(RWeka)
 library(rJava)
 library(RWekajars)
 library(partykit)
-
+library(ggplot2)
+library(profr)
 
 raw_ctrl = read.table("ctrl.gex", sep = "")
 raw_ctrl_dt = data.table(t(raw_ctrl))
@@ -72,12 +73,12 @@ extract_rf_gene_freq <- function(rf, all_gene) {
     colnames(temp)[2]=i
     gene_count = merge(gene_count,temp, by = "gene", all.x=T)
   }
-  gene_count[, count:=colSums(gene_count[,2:l],na.rm = T)]
+  gene_count[, count:=rowSums(gene_count[,2:l],na.rm = T)]
   gene_count[,.(gene, count)]
 }
 
 #an example call
-rf_50sampratio = rf_J48(all_dt) #2:54-3:10
+rf_50sampratio = rf_J48(all_dt, ntree = 10) #2:54-3:10
 gene_freq = extract_rf_gene_freq(rf_50sampratio, all_gene)
 gene_freq[order(count, decreasing = T),]
 
@@ -94,8 +95,9 @@ rf_J48_iter_samp <- function(data=all_dt, ntree=ntree, mtry.ratio=mtry.ratio, st
   detail_count
 }
 
-outcome = rf_J48_iter_samp(ntree=500, mtry.ratio=0.7) #500tree:6:23
 
+outcome = rf_J48_iter_samp(ntree=500, mtry.ratio=0.7)#500tree: 8:09
+write.csv(outcome, "rf1_outcome_1017.csv", row.names = F)
 #2. fix # of samples to 70%, change # of features from 50% to 90%
 rf_J48_iter_feat <- function(data=all_dt, ntree=ntree, samp.ratio=samp.ratio, start = 0.5, end = 0.9, by = 0.05) {
   feat_vector = seq(start, end, by)
@@ -104,12 +106,16 @@ rf_J48_iter_feat <- function(data=all_dt, ntree=ntree, samp.ratio=samp.ratio, st
   rf_subset = as.list(data.frame(matrix(seq(1, length(rf_out), by=1), ncol=length(samp_vector))))
   detail_count = data.table(gene = all_gene)
   for (i in 1:len){
-    detail_count = merge(detail_count, extract_rf_gene_freq(rf_out[rf_subset[[i]]], all_gene), by="gene", all.x = T, suffixes = c(as.character(i-1),as.character(i)))
+    detail_count = cbind(detail_count, extract_rf_gene_freq(rf_out[rf_subset[[i]]], all_gene)[2])
   }
   detail_count
 }
 
-outcome2 = rf_J48_iter_feat(ntree=500, samp.ratio=0.7) #500tree:9:21
+Rprof("rf2_out")
+outcome2=rf_J48_iter_feat(ntree=500, samp.ratio=0.7)
+Rprof(NULL)
+
+#500tree:9:21
 
 #rank gene freq to see the 100 most significant gene
 outcome$avg_freg_rf1 = rowMeans(outcome[,2:10])
@@ -121,3 +127,22 @@ common_gene = merge(outcome[1:100,.(gene, avg_freg_rf1)], outcome2[1:100,.(gene,
 combine_rf_out = merge(outcome, outcome2, by ="gene")
 combine_rf_out[, avg_freq:= 0.5*(avg_freg_rf1+avg_freg_rf2)]
 setorder(combine_rf_out, -avg_freq)
+
+colnames(outcome)[2:10] = paste(as.character(seq(50, 90, by = 5)),"Sample", sep = "%")
+colnames(outcome2)[2:10] = paste(as.character(seq(50, 90, by = 5)),"Feature", sep = "%")
+
+# visualize the distribution of frequency
+outcome_long = reshape(outcome, direction = "long", varying=list(names(outcome)[2:11]), v.names = "Freq", idvar = "gene", timevar = "Forest", times = names(outcome)[2:11])
+ggplot(outcome_long[Forest != "avg_freg_rf1"], aes(x = Freq, fill = Forest)) +
+  geom_histogram(stat = "count") +
+  facet_grid(Forest~.)+
+  labs(y = "Count of Genes", x = "Frequency in each Random Forest", title = "Gene Frequency Distribution in RF w/ Varying Sample Sizes")+
+  theme(strip.text.y = element_blank(), legend.title = element_blank(), legend.text = element_text(size = 8))
+
+outcome2_long = reshape(outcome2, direction = "long", varying=list(names(outcome2)[2:11]), v.names = "Freq", idvar = "gene", timevar = "Forest", times = names(outcome2)[2:11])
+ggplot(outcome2_long[Forest != "avg_freg_rf2"], aes(x = Freq, fill = Forest)) +
+  geom_histogram(stat = "count") +
+  facet_grid(Forest~.)+
+  xlim(c(9,30))+
+  labs(y = "Count of Genes", x = "Frequency in each Random Forest", title = "Gene Frequency Distribution in RF w/ Varying Features")+
+  theme(strip.text.y = element_blank(), legend.title = element_blank(), legend.text = element_text(size = 8))
