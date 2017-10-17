@@ -103,17 +103,17 @@ rf_J48_iter_feat <- function(data=all_dt, ntree=ntree, samp.ratio=samp.ratio, st
   feat_vector = seq(start, end, by)
   len = length(feat_vector)
   rf_out = mapply(rf_J48, feat_vector, MoreArgs = list(data=data, ntree=ntree, samp.ratio = samp.ratio), SIMPLIFY = T)
-  rf_subset = as.list(data.frame(matrix(seq(1, length(rf_out), by=1), ncol=length(samp_vector))))
+  rf_subset = as.list(data.frame(matrix(seq(1, length(rf_out), by=1), ncol=length(feat_vector))))
   detail_count = data.table(gene = all_gene)
   for (i in 1:len){
-    detail_count = cbind(detail_count, extract_rf_gene_freq(rf_out[rf_subset[[i]]], all_gene)[2])
+    detail_count = merge(detail_count, extract_rf_gene_freq(rf_out[rf_subset[[i]]], all_gene), by="gene", all.x = T, suffixes = c(as.character(i-1),as.character(i)))
   }
   detail_count
 }
 
-Rprof("rf2_out")
-outcome2=rf_J48_iter_feat(ntree=500, samp.ratio=0.7)
-Rprof(NULL)
+
+outcome2=rf_J48_iter_feat(ntree=500, samp.ratio=0.7)#2：30
+
 
 #500tree:9:21
 
