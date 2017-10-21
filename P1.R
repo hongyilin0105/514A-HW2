@@ -98,6 +98,8 @@ rf_J48_iter_samp <- function(data=all_dt, ntree=ntree, mtry.ratio=mtry.ratio, st
 
 outcome = rf_J48_iter_samp(ntree=500, mtry.ratio=0.7)#500tree: 8:09
 write.csv(outcome, "rf1_outcome_1017.csv", row.names = F)
+outcome = data.table(read.csv( "rf1_outcome_1017.csv", header = T))
+
 #2. fix # of samples to 70%, change # of features from 50% to 90%
 rf_J48_iter_feat <- function(data=all_dt, ntree=ntree, samp.ratio=samp.ratio, start = 0.5, end = 0.9, by = 0.05) {
   feat_vector = seq(start, end, by)
@@ -113,6 +115,7 @@ rf_J48_iter_feat <- function(data=all_dt, ntree=ntree, samp.ratio=samp.ratio, st
 
 
 outcome2=rf_J48_iter_feat(ntree=500, samp.ratio=0.7)#2：30
+write.csv(outcome2, "rf2_outcome_1017.csv", row.names = F)
 
 
 #500tree:9:21
@@ -133,16 +136,53 @@ colnames(outcome2)[2:10] = paste(as.character(seq(50, 90, by = 5)),"Feature", se
 
 # visualize the distribution of frequency
 outcome_long = reshape(outcome, direction = "long", varying=list(names(outcome)[2:11]), v.names = "Freq", idvar = "gene", timevar = "Forest", times = names(outcome)[2:11])
-ggplot(outcome_long[Forest != "avg_freg_rf1"], aes(x = Freq, fill = Forest)) +
+p1 = ggplot(outcome_long[Forest != "avg_freg_rf1"], aes(x = Freq, fill = Forest)) +
   geom_histogram(stat = "count") +
   facet_grid(Forest~.)+
   labs(y = "Count of Genes", x = "Frequency in each Random Forest", title = "Gene Frequency Distribution in RF w/ Varying Sample Sizes")+
   theme(strip.text.y = element_blank(), legend.title = element_blank(), legend.text = element_text(size = 8))
 
 outcome2_long = reshape(outcome2, direction = "long", varying=list(names(outcome2)[2:11]), v.names = "Freq", idvar = "gene", timevar = "Forest", times = names(outcome2)[2:11])
-ggplot(outcome2_long[Forest != "avg_freg_rf2"], aes(x = Freq, fill = Forest)) +
+p2= ggplot(outcome2_long[Forest != "avg_freg_rf2"], aes(x = Freq, fill = Forest)) +
   geom_histogram(stat = "count") +
   facet_grid(Forest~.)+
-  xlim(c(9,30))+
   labs(y = "Count of Genes", x = "Frequency in each Random Forest", title = "Gene Frequency Distribution in RF w/ Varying Features")+
   theme(strip.text.y = element_blank(), legend.title = element_blank(), legend.text = element_text(size = 8))
+
+multiplot(p1,p2, cols = 2)
+
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+  
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+  
+  numPlots = length(plots)
+  
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                     ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+  
+  if (numPlots==1) {
+    print(plots[[1]])
+    
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+    
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+      
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
