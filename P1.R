@@ -11,6 +11,7 @@ library(partykit)
 library(ggplot2)
 library(profr)
 
+#Load both ctrl and case data
 raw_ctrl = read.table("ctrl.gex", sep = "")
 raw_ctrl_dt = data.table(t(raw_ctrl))
 colnames(raw_ctrl_dt) = as.character(raw_ctrl_dt[1,])
@@ -25,30 +26,33 @@ case_subset_dt = raw_case_dt[-1, 1:1802]
 colnames(case_subset_dt) = str_replace(colnames(case_subset_dt),"-","_")
 case_subset_dt$Classes = as.factor(case_subset_dt$Classes)
 
+#Construct formula to be used in models
 equation = paste("Classes",paste(names(ctrl_subset_dt)[3:1802],collapse = "+"), sep = "~")
 formula = as.formula(equation)
 ctrl_subset_dt[,3:1802] = lapply(ctrl_subset_dt[,3:1802], as.numeric)
 case_subset_dt[,3:1802] = lapply(case_subset_dt[,3:1802], as.numeric)
 summary(ctrl_subset_dt[,3:10])
 
-#impute missing data with column mean
+#impute missing data with column mean for ctrl data
 impute.mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
-
 ctrl_impute_dt = ctrl_subset_dt[, lapply(.SD, impute.mean)]
 ctrl_impute_dt$Classes = as.factor(ctrl_impute_dt$Classes)
 summary(ctrl_impute_dt[,1:5])
-
+#impute missing data with column mean for case data
 case_impute_dt = case_subset_dt[, lapply(.SD, impute.mean)]
 case_impute_dt$Classes = as.factor(case_impute_dt$Classes)
 summary(case_impute_dt[,1:5])
 
-# combine case and ctrl
+# combine case and ctrl data into all_dt
 all_dt = rbindlist(list(ctrl_impute_dt, case_impute_dt), use.names = T, fill = T, idcol = F)
 all_dt$Classes = as.factor(all_dt$Classes)
 
 #1. fix # of features to 70%, change number of samples from 50% to 90%
-all_gene = colnames(all_dt)[3:1802]
+all_gene = colnames(all_dt)[3:1802] #total list of gene names 
 
+#Generate an RF with J48 trees based on # of trees, percentage of features to try
+#at each split, and precentage of instances to use in each tree; rf_J48() returns
+#a list of ntree strings with detailed structure of each tree in the RF
 rf_J48 <- function(data, ntree = 500, mtry.ratio = 0.7, samp.ratio = 0.5) {
   samp_size = nrow(data)
   out_tree = list()
@@ -64,6 +68,8 @@ rf_J48 <- function(data, ntree = 500, mtry.ratio = 0.7, samp.ratio = 0.5) {
   out_tree
 }
 
+#Extract node/gene names using regex "GI_[0-9]+_." in each tree and deduplicate the names;
+#Count the frequency of distinct genes in an RF and return a table of 2 columns
 extract_rf_gene_freq <- function(rf, all_gene) {
   l = length(rf)
   gene_list = data.table()
@@ -77,12 +83,13 @@ extract_rf_gene_freq <- function(rf, all_gene) {
   gene_count[,.(gene, count)]
 }
 
-#an example call
+#an example call to generate and count frequency for a single RF
 rf_50sampratio = rf_J48(all_dt, ntree = 10) #2:54-3:10
 gene_freq = extract_rf_gene_freq(rf_50sampratio, all_gene)
 gene_freq[order(count, decreasing = T),]
 
-# iterative sample ratio
+#iteratively build RF based on varying instances sample ratio;
+#return a table of detailed gene counts from each RF for each gene
 rf_J48_iter_samp <- function(data=all_dt, ntree=ntree, mtry.ratio=mtry.ratio, start = 0.5, end = 0.9, by = 0.05) {
   samp_vector = seq(start, end, by)
   len = length(samp_vector)
@@ -95,12 +102,14 @@ rf_J48_iter_samp <- function(data=all_dt, ntree=ntree, mtry.ratio=mtry.ratio, st
   detail_count
 }
 
-
+#Call on all_dt
 outcome = rf_J48_iter_samp(ntree=500, mtry.ratio=0.7)#500tree: 8:09
 write.csv(outcome, "rf1_outcome_1017.csv", row.names = F)
-outcome = data.table(read.csv( "rf1_outcome_1017.csv", header = T))
+
 
 #2. fix # of samples to 70%, change # of features from 50% to 90%
+#iteratively build RF based on varying percentage of features to drAW;
+#return a table of detailed gene counts from each RF for each gene
 rf_J48_iter_feat <- function(data=all_dt, ntree=ntree, samp.ratio=samp.ratio, start = 0.5, end = 0.9, by = 0.05) {
   feat_vector = seq(start, end, by)
   len = length(feat_vector)
@@ -113,12 +122,12 @@ rf_J48_iter_feat <- function(data=all_dt, ntree=ntree, samp.ratio=samp.ratio, st
   detail_count
 }
 
-
+#Call on all_dt
 outcome2=rf_J48_iter_feat(ntree=500, samp.ratio=0.7)#2：30
 write.csv(outcome2, "rf2_outcome_1017.csv", row.names = F)
 
-
-#500tree:9:21
+colnames(outcome)[2:10] = paste(as.character(seq(50, 90, by = 5)),"Sample", sep = "%")
+colnames(outcome2)[2:10] = paste(as.character(seq(50, 90, by = 5)),"Feature", sep = "%")
 
 #rank gene freq to see the 100 most significant gene
 outcome$avg_freg_rf1 = rowMeans(outcome[,2:10])
@@ -130,11 +139,11 @@ common_gene = merge(outcome[1:100,.(gene, avg_freg_rf1)], outcome2[1:100,.(gene,
 combine_rf_out = merge(outcome, outcome2, by ="gene")
 combine_rf_out[, avg_freq:= 0.5*(avg_freg_rf1+avg_freg_rf2)]
 setorder(combine_rf_out, -avg_freq)
+#Check the top 100 genes
+combine_rf_out[1:100,.(gene,avg_freq)]
 
-colnames(outcome)[2:10] = paste(as.character(seq(50, 90, by = 5)),"Sample", sep = "%")
-colnames(outcome2)[2:10] = paste(as.character(seq(50, 90, by = 5)),"Feature", sep = "%")
 
-# visualize the distribution of frequency
+#visualize the distribution of frequency
 outcome_long = reshape(outcome, direction = "long", varying=list(names(outcome)[2:11]), v.names = "Freq", idvar = "gene", timevar = "Forest", times = names(outcome)[2:11])
 p1 = ggplot(outcome_long[Forest != "avg_freg_rf1"], aes(x = Freq, fill = Forest)) +
   geom_histogram(stat = "count") +
@@ -150,15 +159,12 @@ p2= ggplot(outcome2_long[Forest != "avg_freg_rf2"], aes(x = Freq, fill = Forest)
   theme(strip.text.y = element_blank(), legend.title = element_blank(), legend.text = element_text(size = 8))
 
 multiplot(p1,p2, cols = 2)
-
+#to call multiplot, requires the function below
 multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
   library(grid)
-  
   # Make a list from the ... arguments and plotlist
   plots <- c(list(...), plotlist)
-  
   numPlots = length(plots)
-  
   # If layout is NULL, then use 'cols' to determine layout
   if (is.null(layout)) {
     # Make the panel
@@ -167,15 +173,12 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
     layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
                      ncol = cols, nrow = ceiling(numPlots/cols))
   }
-  
   if (numPlots==1) {
     print(plots[[1]])
-    
   } else {
     # Set up the page
     grid.newpage()
     pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
-    
     # Make each plot, in the correct location
     for (i in 1:numPlots) {
       # Get the i,j matrix positions of the regions that contain this subplot
