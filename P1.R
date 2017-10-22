@@ -1,5 +1,4 @@
 library(data.table)
-library(randomForest)
 library(stringr)
 library(reshape2)
 #install.packages("RWeka")
@@ -9,7 +8,6 @@ library(rJava)
 library(RWekajars)
 library(partykit)
 library(ggplot2)
-library(profr)
 
 #Load both ctrl and case data
 raw_ctrl = read.table("ctrl.gex", sep = "")
