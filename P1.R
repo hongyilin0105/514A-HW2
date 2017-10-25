@@ -145,6 +145,7 @@ outcome[, rank:=seq_len(.N) ]
 outcome2[, rank:=seq_len(.N) ]
 
 #Iteratively Add rank of each RF
+#Could have automate this part of code, but skipped for now
 setorder(outcome, -"50%Sample")
 outcome[,rank1 := seq_len(.N)]
 setorder(outcome, -"55%Sample")
