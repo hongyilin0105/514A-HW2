@@ -138,15 +138,89 @@ combine_rf_out = merge(outcome, outcome2, by ="gene")
 combine_rf_out[, avg_freq:= 0.5*(avg_freg_rf1+avg_freg_rf2)]
 setorder(combine_rf_out, -avg_freq)
 #Check the top 100 genes
-combine_rf_out[1:100,.(gene,avg_freq)]
+rf_top100 = combine_rf_out[1:100,.(gene,avg_freq)]
 
+
+outcome[, rank:=seq_len(.N) ]
+outcome2[, rank:=seq_len(.N) ]
+
+#Iteratively Add rank of each RF
+setorder(outcome, -"50%Sample")
+outcome[,rank1 := seq_len(.N)]
+setorder(outcome, -"55%Sample")
+outcome[,rank2 := seq_len(.N)]
+setorder(outcome, -"60%Sample")
+outcome[,rank3 := seq_len(.N)]
+setorder(outcome, -"65%Sample")
+outcome[,rank4 := seq_len(.N)]
+setorder(outcome, -"70%Sample")
+outcome[,rank5 := seq_len(.N)]
+setorder(outcome, -"75%Sample")
+outcome[,rank6 := seq_len(.N)]
+setorder(outcome, -"80%Sample")
+outcome[,rank7 := seq_len(.N)]
+setorder(outcome, -"85%Sample")
+outcome[,rank8 := seq_len(.N)]
+setorder(outcome, -"90%Sample")
+outcome[,rank9 := seq_len(.N)]
+setorder(outcome, rank)
+
+setorder(outcome2, -"50%Feature")
+outcome2[,rank1 := seq_len(.N)]
+setorder(outcome2, -"55%Feature")
+outcome2[,rank2 := seq_len(.N)]
+setorder(outcome2, -"60%Feature")
+outcome2[,rank3 := seq_len(.N)]
+setorder(outcome2, -"65%Feature")
+outcome2[,rank4 := seq_len(.N)]
+setorder(outcome2, -"70%Feature")
+outcome2[,rank5 := seq_len(.N)]
+setorder(outcome2, -"75%Feature")
+outcome2[,rank6 := seq_len(.N)]
+setorder(outcome2, -"80%Feature")
+outcome2[,rank7 := seq_len(.N)]
+setorder(outcome2, -"85%Feature")
+outcome2[,rank8 := seq_len(.N)]
+setorder(outcome2, -"90%Feature")
+outcome2[,rank9 := seq_len(.N)]
+setorder(outcome2, rank)
+
+outcome_rank = outcome[,.(rank1,rank2,rank3,rank4,rank5,rank6,rank7,rank8,rank9)]
+outcome_rank_sd = transform(outcome_rank, SD=apply(outcome_rank,1, sd, na.rm = TRUE))
+avg_rank_sd = mean(outcome_rank_sd$SD)
+
+outcome2_rank = outcome2[,.(rank1,rank2,rank3,rank4,rank5,rank6,rank7,rank8,rank9)]
+outcome2_rank_sd = transform(outcome2_rank, SD=apply(outcome2_rank,1, sd, na.rm = TRUE))
+avg_rank_sd2 = mean(outcome2_rank_sd$SD)
+
+
+
+#visualize the gene rank deviation below
+x <- seq(0, 650, length.out=1300)
+df <- with(outcome_rank_sd, data.frame(x = x, y = dnorm(x, mean(SD), sd(SD))))
+d1=ggplot(outcome_rank_sd, aes(x=SD, y = ..density..)) + geom_histogram(bins = 50, col = "black", fill = "grey") + 
+  geom_line(data = df, aes(x = x, y = y), color = "red")+
+  theme(plot.title = element_text(size = 14), axis.text.x  = element_text(size = 8))+
+  labs(x="Standard Deviation of Rank", y="Density", title = "Gene Rank Deviation from RF set 1: Varying Instance Size")
+
+df2 <- with(outcome2_rank_sd, data.frame(x = x, y = dnorm(x, mean(SD), sd(SD))))
+d2 = ggplot(outcome2_rank_sd, aes(x=SD, y = ..density..)) + geom_histogram(bins = 50, col = "black", fill = "grey") + 
+  geom_line(data = df2, aes(x = x, y = y), color = "red")+
+  theme(plot.title = element_text(size = 14), axis.text.x  = element_text(size = 8))+
+  labs(x="Standard Deviation of Rank", y="", title = "Gene Rank Deviation from RF set 2: Varying Feature Size")
+
+
+multiplot(d1,d2, cols = 2)
+#par(mfrow = c(1,2))
+#hist(outcome_rank_sd$SD, breaks = 50, xlim = c(0,700), ylim = c(0,80))
+#hist(outcome2_rank_sd$SD, breaks = 50, xlim = c(0,700), ylim = c(0,80))
 
 #visualize the distribution of frequency
 outcome_long = reshape(outcome, direction = "long", varying=list(names(outcome)[2:11]), v.names = "Freq", idvar = "gene", timevar = "Forest", times = names(outcome)[2:11])
 p1 = ggplot(outcome_long[Forest != "avg_freg_rf1"], aes(x = Freq, fill = Forest)) +
   geom_histogram(stat = "count") +
   facet_grid(Forest~.)+
-  labs(y = "Count of Genes", x = "Frequency in each Random Forest", title = "Gene Frequency Distribution in RF w/ Varying Sample Sizes")+
+  labs(y = "Rank of Gene", x = "Gene", title = "Gene Importance Rank from 9 RFs")+
   theme(strip.text.y = element_blank(), legend.title = element_blank(), legend.text = element_text(size = 8))
 
 outcome2_long = reshape(outcome2, direction = "long", varying=list(names(outcome2)[2:11]), v.names = "Freq", idvar = "gene", timevar = "Forest", times = names(outcome2)[2:11])
